@@ -22,7 +22,7 @@ class Post(BaseModel):
     title: str
     content: str
     published: bool = True
-    rating: Optional[int] = None
+    # rating: Optional[int] = None
 
 
 class UpdatePost(Post):
@@ -74,30 +74,37 @@ def root():
 
 
 @app.get("/posts")
-def posts():
-    cursor.execute("""SELECT * FROM posts""")
-    posts = cursor.fetchall()
-    print(posts)
-    return {"data": posts}
+def posts(db: Session = Depends(get_db)):
+    # cursor.execute("""SELECT * FROM posts""")
+    # posts = cursor.fetchall()
+    # print(posts)
+    posts = db.query(models.Post).all()
+    return posts
 
 
 @app.post("/posts", status_code=status.HTTP_201_CREATED)
-def posts(post: Post):
+def posts(post: Post, db: Session = Depends(get_db)):
     # post_dict = post.dict()
     # post_dict['id'] = randrange(0, 1e10)
     # my_posts.append(post_dict)
-    cursor.execute("""INSERT INTO posts (title, content, published) VALUES (%s, %s, %s) RETURNING *""",
-                   (post.title, post.content, post.published))
-    new_post = cursor.fetchone()
-    conn.commit()
+    # cursor.execute("""INSERT INTO posts (title, content, published) VALUES (%s, %s, %s) RETURNING *""",
+    #                (post.title, post.content, post.published))
+    # new_post = cursor.fetchone()
+    # conn.commit()
+    new_post = models.Post(**post.dict())
+    db.add(new_post)
+    db.commit()
+    db.refresh(new_post)
     return {f"data": new_post}
 
 
 @app.get("/posts/{id}")
-def posts(id: int):
+def posts(id: int, db: Session = Depends(get_db)):
     # post = find_post(id)
-    cursor.execute("""SELECT * FROM posts WHERE id=%s""", str(id))
-    post = cursor.fetchone()
+    # cursor.execute("""SELECT * FROM posts WHERE id=%s""", str(id))
+    # post = cursor.fetchone()
+    post = db.query(models.Post).filter(models.Post.id == id).first()
+    # print(post)
     if not post:
         # response.status_code = status.HTTP_404_NOT_FOUND
         # return {"message": f"Post with id {id} was not found"}
@@ -106,23 +113,26 @@ def posts(id: int):
 
 
 @app.delete("/posts/{id}", status_code=status.HTTP_204_NO_CONTENT)
-def posts(id: int):
+def posts(id: int, db: Session = Depends(get_db)):
     # deleting post
     # find the index
     # index = find_index_post(id)
     # if not index:
     #     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with id {id} was not found")
     # my_posts.pop(index)
-    cursor.execute("""DELETE FROM posts WHERE id = %s RETURNING *""", (str(id), ))
-    deleted_post = cursor.fetchone()
-    conn.commit()
-    if not deleted_post:
+    # cursor.execute("""DELETE FROM posts WHERE id = %s RETURNING *""", (str(id), ))
+    # deleted_post = cursor.fetchone()
+    # conn.commit()
+    post = db.query(models.Post).filter(models.Post.id == id)
+    if post.first() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with id {id} was not found")
+    post.delete(synchronize_session=False)
+    db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.put("/posts/{id}", status_code=status.HTTP_202_ACCEPTED)
-def posts(id: int, post: UpdatePost):
+def posts(id: int, updated_post: UpdatePost, db: Session = Depends(get_db)):
     # deleting post
     # find the index
     # index = find_index_post(id)
@@ -133,10 +143,15 @@ def posts(id: int, post: UpdatePost):
     # post_dict['id'] = id
     # my_posts[index] = post_dict
 
-    cursor.execute("""UPDATE posts SET title=%s, content=%s, published=%s WHERE id=%s RETURNING *""",
-                   (post.title, post.content, post.published, str(id)))
-    post = cursor.fetchone()
-    conn.commit()
-    if not post:
+    # cursor.execute("""UPDATE posts SET title=%s, content=%s, published=%s WHERE id=%s RETURNING *""",
+    #                (post.title, post.content, post.published, str(id)))
+    # post = cursor.fetchone()
+    # conn.commit()
+
+    post_query = db.query(models.Post).filter(models.Post.id == id)
+    post = post_query.first()
+    if post is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with id {id} was not found")
-    return {"data": post}
+    post_query.update(updated_post.dict(), synchronize_session=False)
+    db.commit()
+    return {"data": post_query.first()}
